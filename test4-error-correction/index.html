@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes Agent 测试4: 错误自纠正与自适应学习</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 40px 20px 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2.2em;
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        .header .subtitle {
+            color: #888;
+            font-size: 1.1em;
+        }
+        .meta-badges {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .meta-badge {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 20px;
+            padding: 5px 15px;
+            font-size: 0.85em;
+            color: #aaa;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-3px); }
+        .card .value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .card .label {
+            color: #888;
+            font-size: 0.9em;
+        }
+        .card.pass .value { color: #4ade80; }
+        .card.info .value { color: #00d2ff; }
+        .card.warn .value { color: #fbbf24; }
+        .card.pink .value { color: #f857a6; }
+        .section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        .section h2 {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        .section h3 {
+            color: #ccc;
+            margin-bottom: 10px;
+        }
+        .intro-box {
+            background: rgba(0,210,255,0.05);
+            border-left: 4px solid #00d2ff;
+            padding: 15px 20px;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 20px;
+        }
+        .intro-box p { color: #ccc; }
+        .highlight {
+            color: #00d2ff;
+            font-weight: bold;
+        }
+        .flow-diagram {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 20px 0;
+        }
+        .flow-step {
+            background: rgba(58,123,213,0.15);
+            border: 1px solid rgba(58,123,213,0.4);
+            border-radius: 12px;
+            padding: 12px 18px;
+            text-align: center;
+            min-width: 120px;
+        }
+        .flow-step .step-icon { font-size: 1.5em; margin-bottom: 5px; }
+        .flow-step .step-label { font-size: 0.85em; color: #aaa; }
+        .flow-step .step-name { font-weight: bold; color: #fff; font-size: 0.95em; }
+        .flow-arrow {
+            color: #3a7bd5;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+            margin-top: 15px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #3a7bd5, #f857a6);
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -26px;
+            top: 20px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid #3a7bd5;
+            background: #1a1a2e;
+        }
+        .timeline-item.completed::before { background: #4ade80; border-color: #4ade80; }
+        .timeline-item.running::before { background: #00d2ff; border-color: #00d2ff; }
+        .timeline-item.error::before { background: #f87171; border-color: #f87171; }
+        .timeline-item.fix::before { background: #fbbf24; border-color: #fbbf24; }
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .step-title { font-weight: bold; color: #fff; font-size: 1em; }
+        .step-time { color: #888; font-size: 0.85em; }
+        .step-detail { color: #bbb; font-size: 0.9em; line-height: 1.7; }
+        .step-detail code {
+            background: rgba(0,210,255,0.1);
+            color: #00d2ff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+        .step-explain {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            color: #888;
+            font-size: 0.85em;
+            font-style: italic;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .chart-box {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .chart-container {
+            position: relative;
+            height: 280px;
+        }
+        .test-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .test-table th, .test-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .test-table th {
+            background: rgba(255,255,255,0.05);
+            color: #aaa;
+            font-weight: 600;
+        }
+        .test-table tr:hover { background: rgba(255,255,255,0.03); }
+        .status-tag {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .status-tag.pass { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+        .status-tag.fail { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+        .status-tag.warn { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+        .status-tag.info { background: rgba(0,210,255,0.15); color: #00d2ff; border: 1px solid rgba(0,210,255,0.3); }
+        .verdict-box {
+            background: linear-gradient(135deg, rgba(74,222,128,0.1), rgba(58,123,213,0.1));
+            border: 1px solid rgba(74,222,128,0.3);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        .verdict-box h3 { color: #4ade80; margin-bottom: 15px; font-size: 1.2em; }
+        .verdict-box ul { list-style: none; padding-left: 0; }
+        .verdict-box li {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            color: #ccc;
+        }
+        .verdict-box li:last-child { border-bottom: none; }
+        .analogy-box {
+            background: rgba(248,87,166,0.05);
+            border-left: 4px solid #f857a6;
+            padding: 15px 20px;
+            border-radius: 0 12px 12px 0;
+        }
+        .analogy-title {
+            color: #f857a6;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .analogy-box p { color: #ccc; line-height: 1.7; }
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 12px;
+        }
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .data-label { color: #888; }
+        .data-value { color: #fff; font-weight: 600; }
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin-top: 30px;
+        }
+        .bug-card {
+            background: rgba(248,113,113,0.08);
+            border: 1px solid rgba(248,113,113,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+        }
+        .bug-card .bug-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .bug-card .bug-name { color: #f87171; font-weight: bold; }
+        .bug-card .bug-fix { color: #4ade80; font-size: 0.9em; }
+        .bug-card .bug-desc { color: #bbb; font-size: 0.9em; line-height: 1.6; }
+        .skill-card {
+            background: rgba(139,92,246,0.08);
+            border: 1px solid rgba(139,92,246,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+        }
+        .skill-card h4 { color: #8b5cf6; margin-bottom: 8px; }
+        .skill-card p { color: #bbb; font-size: 0.9em; line-height: 1.6; }
+        @media (max-width: 768px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            .flow-diagram { flex-direction: column; }
+            .flow-arrow { transform: rotate(90deg); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Hermes Agent 测试4: 错误自纠正与自适应学习</h1>
+        <p class="subtitle">评估 Agent 识别代码缺陷、定位根因、修复Bug、编写测试并将经验固化为技能的自适应学习能力</p>
+        <div class="meta-badges">
+            <span class="meta-badge">🤖 Hermes Agent v0.9.0</span>
+            <span class="meta-badge">🧠 glm-5.1 (z.ai)</span>
+            <span class="meta-badge">📅 2026-04-15</span>
+            <span class="meta-badge">⏱️ 13分8秒</span>
+            <span class="meta-badge">🐛 3 Bug修复 + 26 单元测试 + 1 技能固化</span>
+        </div>
+    </div>
+
+    <div class="summary-cards">
+        <div class="card pass">
+            <div class="value">✅ PASS</div>
+            <div class="label">测试结果</div>
+        </div>
+        <div class="card info">
+            <div class="value">20</div>
+            <div class="label">API 调用次数</div>
+        </div>
+        <div class="card pink">
+            <div class="value">19</div>
+            <div class="label">工具调用次数</div>
+        </div>
+        <div class="card warn">
+            <div class="value">13:08</div>
+            <div class="label">总耗时 (分:秒)</div>
+        </div>
+        <div class="card info">
+            <div class="value">3</div>
+            <div class="label">Bug 修复数</div>
+        </div>
+        <div class="card pass">
+            <div class="value">26</div>
+            <div class="label">单元测试 (全部通过)</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📋</span> 测试概述</h2>
+        <div class="intro-box">
+            <p><strong>测试任务：</strong>向 Hermes Agent 提供一个包含多个隐藏 Bug 的 Python 脚本 (<code>/tmp/buggy_script.py</code>)，要求 Agent <span class="highlight">自主发现缺陷</span>、定位根因、修复所有 Bug、添加完善的错误处理机制、编写单元测试，并将整个调试经验保存为可复用的技能。这是一个典型的<span class="highlight">错误自纠正与自适应学习</span>测试。</p>
+        </div>
+        <div class="intro-box" style="border-left-color: #f857a6; background: rgba(248,87,166,0.05);">
+            <p><strong>测试指令：</strong><code>"There is a buggy Python script at /tmp/buggy_script.py that should sort a list of dictionaries by multiple keys but produces wrong results. Find the bug, fix it, add proper error handling, and write unit tests. Then save the debugging experience as a skill."</code></p>
+        </div>
+        <div class="intro-box" style="border-left-color: #fbbf24; background: rgba(251,191,36,0.05);">
+            <p><strong>预设 Bug（3个）：</strong><br>
+            🐛 Bug 1: <code>sort_records()</code> — 排序键含 None 值时元组比较崩溃 (TypeError)<br>
+            🐛 Bug 2: <code>filter_records()</code> — 字段不存在时直接 KeyError 崩溃<br>
+            🐛 Bug 3: <code>aggregate_records()</code> — 值为 None 时加法操作 TypeError 崩溃</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🐛</span> Bug 详情与修复方案</h2>
+        <div class="bug-card">
+            <div class="bug-header">
+                <span class="bug-name">🐛 Bug 1: sort_records() — None 值排序崩溃</span>
+                <span class="bug-fix">✅ 已修复</span>
+            </div>
+            <div class="bug-desc">
+                <strong>根因：</strong><code>sorted(records, key=lambda x: tuple(x[k] for k in keys))</code> 当字典值包含 <code>None</code> 时，元组比较触发 <code>TypeError</code><br>
+                <strong>修复：</strong>自定义排序键函数，将 <code>None</code> 排在最后；添加类型检查，确保 <code>keys</code> 参数为非空可迭代对象；空列表直接返回
+            </div>
+        </div>
+        <div class="bug-card">
+            <div class="bug-header">
+                <span class="bug-name">🐛 Bug 2: filter_records() — KeyError 崩溃</span>
+                <span class="bug-fix">✅ 已修复</span>
+            </div>
+            <div class="bug-desc">
+                <strong>根因：</strong>直接使用 <code>r[field]</code> 访问字典键，当字段不存在时抛出 <code>KeyError</code><br>
+                <strong>修复：</strong>使用 <code>field in r</code> 预检查字段存在性；不匹配条件返回空列表；添加自定义异常 <code>DataProcessingError</code> 统一错误处理
+            </div>
+        </div>
+        <div class="bug-card">
+            <div class="bug-header">
+                <span class="bug-name">🐛 Bug 3: aggregate_records() — None/非数值加法崩溃</span>
+                <span class="bug-fix">✅ 已修复</span>
+            </div>
+            <div class="bug-desc">
+                <strong>根因：</strong><code>result.get(key, 0) + r[agg_field]</code> 当 <code>agg_field</code> 值为 <code>None</code> 或非数值类型时触发 <code>TypeError</code><br>
+                <strong>修复：</strong>使用 <code>isinstance(val, (int, float))</code> 类型守卫；跳过 <code>None</code> 和非数值；添加分组键和聚合字段存在性检查
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🔀</span> 任务执行流程</h2>
+        <div class="flow-diagram">
+            <div class="flow-step">
+                <div class="step-icon">📖</div>
+                <div class="step-name">代码阅读</div>
+                <div class="step-label">read_file 分析脚本</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">🚨</div>
+                <div class="step-name">Bug 复现</div>
+                <div class="step-label">terminal 运行确认</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">🔧</div>
+                <div class="step-name">代码修复</div>
+                <div class="step-label">write_file 重写脚本</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">🧪</div>
+                <div class="step-name">单元测试</div>
+                <div class="step-label">26个测试全部通过</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">💾</div>
+                <div class="step-name">技能固化</div>
+                <div class="step-label">skill_manage 保存</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">✅</div>
+                <div class="step-name">交付完成</div>
+                <div class="step-label">完整修复+测试+学习</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">⏱️</span> 执行时间线</h2>
+        <div class="timeline">
+            <div class="timeline-item running">
+                <div class="step-header">
+                    <span class="step-title">📖 Step 1: 阅读并分析Bug脚本</span>
+                    <span class="step-time">17:02:26 - 17:04:09 · ~103秒</span>
+                </div>
+                <div class="step-detail">
+                    Agent 使用 <code>read_file</code> 读取 <code>/tmp/buggy_script.py</code> (84行代码)<br>
+                    分析代码结构，识别三个函数：<code>sort_records</code>、<code>filter_records</code>、<code>aggregate_records</code><br>
+                    初步判断存在 None 值处理、字段检查、类型校验等潜在问题<br>
+                    使用 <code>todo</code> 工具规划调试步骤
+                </div>
+                <div class="step-explain">💬 Agent 首先通读全文建立全局认知，而不是急于修改——像经验丰富的代码审查者一样「先理解再动手」</div>
+            </div>
+            <div class="timeline-item error">
+                <div class="step-header">
+                    <span class="step-title">🚨 Step 2: 运行脚本复现Bug</span>
+                    <span class="step-time">17:04:09 - 17:05:08 · ~59秒</span>
+                </div>
+                <div class="step-detail">
+                    使用 <code>terminal</code> 执行 <code>python3 /tmp/buggy_script.py</code><br>
+                    确认脚本在 <code>aggregate_records</code> 处崩溃，报错 <span class="status-tag fail">TypeError</span><br>
+                    分析错误堆栈，定位到 None 值与整数相加的具体行号<br>
+                    识别出三个关联 Bug：排序(None比较)、过滤(KeyError)、聚合(TypeError)
+                </div>
+                <div class="step-explain">💬 先复现再修复是专业调试的基本原则——Agent 精确复现了崩溃场景，确认了 Bug 的触发条件</div>
+            </div>
+            <div class="timeline-item fix">
+                <div class="step-header">
+                    <span class="step-title">🔧 Step 3: 编写修复代码</span>
+                    <span class="step-time">17:05:08 - 17:07:30 · ~142秒</span>
+                </div>
+                <div class="step-detail">
+                    使用 <code>write_file</code> 重写完整脚本，修复所有3个Bug：<br>
+                    - 添加自定义异常 <code>DataProcessingError</code> 统一错误体系<br>
+                    - <code>sort_records</code>: 自定义排序键函数，None 值安全排序<br>
+                    - <code>filter_records</code>: 字段存在性预检查 + 空列表保护<br>
+                    - <code>aggregate_records</code>: <code>isinstance</code> 类型守卫 + None/非数值跳过<br>
+                    使用 <code>terminal</code> 验证修复后脚本正常运行
+                </div>
+                <div class="step-explain">💬 Agent 不仅修复了表面Bug，还建立了统一的异常体系——从「治标」到「治本」的工程思维</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">🧪 Step 4: 编写单元测试</span>
+                    <span class="step-time">17:07:30 - 17:11:41 · ~251秒</span>
+                </div>
+                <div class="step-detail">
+                    使用 <code>write_file</code> 创建 <code>test_buggy_script.py</code> — 26个单元测试<br>
+                    覆盖场景：正常数据、None值处理、空列表、单元素、KeyError保护、类型校验等<br>
+                    首次运行 <span class="status-tag warn">1个测试失败</span> (空输入边界条件)<br>
+                    使用 <code>patch</code> 修复空输入处理逻辑后重新运行<br>
+                    最终 <span class="status-tag pass">26/26 测试全部通过</span>
+                </div>
+                <div class="step-explain">💬 26个测试覆盖了正常路径和多种边界条件，Agent 还主动发现并修复了自己的一个遗漏——这种自我验证意识非常专业</div>
+            </div>
+            <div class="timeline-item fix">
+                <div class="step-header">
+                    <span class="step-title">🔄 Step 5: 安装pytest与测试迭代</span>
+                    <span class="step-time">17:11:41 - 17:13:26 · ~105秒</span>
+                </div>
+                <div class="step-detail">
+                    尝试 <code>pip install pytest</code> 失败 — 系统未安装 pip<br>
+                    切换方案：<code>sudo apt install python3-pytest</code> 自动跳过密码确认<br>
+                    首轮测试发现空输入边界case未处理，返回 <span class="status-tag warn">1 failed</span><br>
+                    使用 <code>patch</code> 精确修复问题行，重跑测试 <span class="status-tag pass">26 passed</span>
+                </div>
+                <div class="step-explain">💬 遇到环境问题(pip缺失)时自动切换方案，遇到测试失败时精确定位并修复——这是一个完整的「发现问题→解决问题」闭环</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">💾 Step 6: 技能固化 (Skill Saving)</span>
+                    <span class="step-time">17:13:26 - 17:14:56 · ~90秒</span>
+                </div>
+                <div class="step-detail">
+                    使用 <code>skill_manage</code> 保存调试经验为可复用技能：<br>
+                    技能名称：<code>debugging/python-sort-dict-bugfix</code><br>
+                    包含：Bug类型识别模式、修复策略、测试覆盖要点、预防措施<br>
+                    将本次调试经验固化为 <span class="highlight">可自动调用的知识资产</span>
+                </div>
+                <div class="step-explain">💬 这是「自适应学习」的核心——Agent 不仅解决了当前问题，还将经验沉淀为未来可复用的技能模板</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">✅ Step 7: 最终交付</span>
+                    <span class="step-time">17:15:33 · 全部完成</span>
+                </div>
+                <div class="step-detail">
+                    全部任务完成，汇总交付：<br>
+                    - <span class="status-tag pass">3/3 Bug 修复</span> — sort/filter/aggregate 全部修复并验证<br>
+                    - <span class="status-tag pass">26/26 测试通过</span> — 覆盖正常路径+边界条件<br>
+                    - <span class="status-tag info">1 技能固化</span> — debugging/python-sort-dict-bugfix<br>
+                    总耗时 <strong>13分8秒</strong>，20次API调用
+                </div>
+                <div class="step-explain">💬 从Bug发现到测试验证再到经验固化，Agent 完成了一个完整的「学习→实践→沉淀」自适应学习闭环</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📊</span> 数据可视化 — 图表分析</h2>
+        <div class="chart-grid">
+            <div class="chart-box">
+                <h3>Token 消耗趋势 (20次API调用)</h3>
+                <div class="chart-container">
+                    <canvas id="tokenChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>任务阶段执行时间分布 (秒)</h3>
+                <div class="chart-container">
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>工具调用分布</h3>
+                <div class="chart-container">
+                    <canvas id="toolChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>Token 使用构成</h3>
+                <div class="chart-container">
+                    <canvas id="tokenPieChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📈</span> 性能指标</h2>
+        <div class="chart-grid">
+            <div class="chart-box">
+                <h3>API 调用延迟分布 (秒)</h3>
+                <div class="chart-container">
+                    <canvas id="latencyChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>缓存命中率趋势 (z.ai 智能缓存)</h3>
+                <div class="chart-container">
+                    <canvas id="cacheChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="intro-box" style="margin-top: 20px;">
+            <p><strong>📊 图表解读：</strong>Token 消耗呈现<strong>持续上升</strong>模式——随着调试深入，上下文不断积累（从14K增长到24K Prompt Tokens），这是因为 Agent 在每次调用中需要携带前序的代码阅读、Bug分析、修复历史等上下文信息。值得注意的是 <span class="highlight">Cache命中率</span> 从首次50%快速攀升至92%+并持续保持在96-100%，说明 z.ai 智能缓存有效控制了重复上下文的传输成本。两个延迟峰值（#5: 56.7s 和 #8: 69.9s）对应的是 Agent 生成大量代码的调用——修复脚本(1321 tokens)和编写测试(2220 tokens)。</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🧪</span> 测试结果明细</h2>
+        <table class="test-table">
+            <thead>
+                <tr>
+                    <th>测试项</th>
+                    <th>状态</th>
+                    <th>详情</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>🐛 Bug 识别能力</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>成功识别3个隐藏Bug：sort(None比较)、filter(KeyError)、aggregate(TypeError)</td>
+                </tr>
+                <tr>
+                    <td>🔍 根因分析能力</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>通过运行脚本复现崩溃，精确分析错误堆栈定位根因</td>
+                </tr>
+                <tr>
+                    <td>🔧 代码修复质量</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>修复3个Bug + 添加自定义异常体系 + 完善输入校验，远超基本修复要求</td>
+                </tr>
+                <tr>
+                    <td>🧪 单元测试覆盖</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>编写26个测试用例覆盖正常/边界/异常场景，全部通过</td>
+                </tr>
+                <tr>
+                    <td>🔄 自我验证迭代</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>发现1个测试失败后自动修复并重新验证，完成闭环</td>
+                </tr>
+                <tr>
+                    <td>💾 技能固化能力</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>通过skill_manage保存调试经验为debugging/python-sort-dict-bugfix技能</td>
+                </tr>
+                <tr>
+                    <td>🛠️ 工具使用多样性</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>使用6种工具(read_file/terminal/write_file/patch/todo/skill_manage)，19次调用</td>
+                </tr>
+                <tr>
+                    <td>⚡ 环境问题处理</td>
+                    <td><span class="status-tag warn">PASS</span></td>
+                    <td>pip缺失时自动切换apt安装方案，sudo密码自动跳过</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🧠</span> 技能固化成果</h2>
+        <div class="skill-card">
+            <h4>💾 debugging/python-sort-dict-bugfix</h4>
+            <p><strong>技能类型：</strong>调试经验<br>
+            <strong>涵盖内容：</strong><br>
+            • Python 字典列表排序中 None 值处理模式<br>
+            • 字典键访问前的存在性检查最佳实践<br>
+            • 数值聚合操作的类型安全守卫模式<br>
+            • 自定义异常 <code>DataProcessingError</code> 统一错误处理范式<br>
+            • 单元测试边界条件覆盖策略 (空列表/单元素/None值/混合类型)<br>
+            <strong>复用价值：</strong>Agent 未来遇到类似的字典数据处理代码时，可自动调用此技能进行预防性检查和修复。</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📋</span> 关键数据汇总</h2>
+        <div class="data-grid">
+            <div class="data-item">
+                <span class="data-label">🧠 使用模型</span>
+                <span class="data-value">glm-5.1 (z.ai)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">⏱️ 总耗时</span>
+                <span class="data-value">13分8秒</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🔄 API 调用次数</span>
+                <span class="data-value">20次</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🛠️ 工具调用次数</span>
+                <span class="data-value">19次 (6种工具)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📝 Prompt Tokens</span>
+                <span class="data-value">388,244</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">💬 Completion Tokens</span>
+                <span class="data-value">6,043</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📊 Token 总消耗</span>
+                <span class="data-value">394,287</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🐛 Bug 修复</span>
+                <span class="data-value" style="color: #4ade80;">3/3 全部修复</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🧪 单元测试</span>
+                <span class="data-value" style="color: #4ade80;">26/26 全部通过</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">💾 固化技能</span>
+                <span class="data-value" style="color: #8b5cf6;">1个</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">⚡ 缓存命中率</span>
+                <span class="data-value" style="color: #4ade80;">平均 96.6%</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🏷️ Session ID</span>
+                <span class="data-value" style="font-size: 0.75em;">20260415_170226_ecfa1e</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🏁</span> 测试结论</h2>
+        <div class="verdict-box">
+            <h3>✅ 测试4「错误自纠正与自适应学习」— 通过</h3>
+            <ul>
+                <li><strong>精准的Bug识别</strong> — 通过阅读代码+运行复现，成功识别全部3个预设Bug，包括隐式的None值比较问题</li>
+                <li><strong>根因分析到位</strong> — 不是简单打补丁，而是深入分析每个Bug的根本原因，建立了统一的异常处理体系</li>
+                <li><strong>高质量的代码修复</strong> — 修复远超基本要求：添加自定义异常、输入校验、类型守卫，体现了工程化思维</li>
+                <li><strong>完善的测试覆盖</strong> — 26个测试用例覆盖正常路径和多种边界条件，发现并修复了自己的一个遗漏</li>
+                <li><strong>闭环的自我验证</strong> — 从发现问题→修复→测试→发现新问题→再修复→验证通过，展现了完整的迭代改进能力</li>
+                <li><strong>关键的自适应学习</strong> — 通过 skill_manage 将调试经验固化为可复用技能，实现了从「解决问题」到「积累经验」的飞跃</li>
+            </ul>
+        </div>
+        <div class="analogy-box">
+            <div class="analogy-title">🎯 一句话总结</div>
+            <p>Hermes Agent 在本次错误自纠正测试中展现了<strong>「自我进化的资深工程师」</strong>特质：面对3个隐藏Bug，Agent像经验丰富的代码审查者一样先阅读理解、再运行复现、然后系统性修复，最终交付了远超预期的修复方案（含自定义异常体系）和<strong>26个全覆盖的单元测试</strong>。更关键的是，Agent 将整个调试经验通过 <code>skill_manage</code> 固化为 <code>debugging/python-sort-dict-bugfix</code> 技能——这意味着<strong>它真正具备了从经验中学习并应用于未来的能力</strong>。13分钟内完成了 Bug发现→根因分析→代码修复→测试验证→经验沉淀 的完整自适应学习闭环。</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>🤖 Hermes Agent v0.9.0 · 测试报告 · 2026-04-15</p>
+        <p style="margin-top: 5px;">模型: glm-5.1 (z.ai) | 总耗时: 13分8秒 | API调用: 20次 | 工具调用: 19次 | Bug修复: 3个 | 测试: 26个 | 技能: 1个</p>
+    </div>
+</div>
+
+<script>
+const ctxToken = document.getElementById('tokenChart').getContext('2d');
+new Chart(ctxToken, {
+    type: 'line',
+    data: {
+        labels: ['#1','#2','#3','#4','#5','#6','#7','#8','#9','#10','#11','#12','#13','#14','#15','#16','#17','#18','#19','#20'],
+        datasets: [{
+            label: 'Prompt Tokens (输入)',
+            data: [14016,15233,15313,15595,16034,17374,17526,17931,20170,20230,20287,20342,20552,20693,21573,21812,22548,22951,23840,24224],
+            borderColor: '#3a7bd5',
+            backgroundColor: 'rgba(58,123,213,0.1)',
+            fill: true,
+            tension: 0.4
+        }, {
+            label: 'Completion Tokens (输出)',
+            data: [35,46,23,231,1321,23,197,2220,30,22,25,69,35,30,83,30,195,773,177,478],
+            borderColor: '#f857a6',
+            backgroundColor: 'rgba(248,87,166,0.1)',
+            fill: true,
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#aaa' } } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+    }
+});
+
+const ctxTime = document.getElementById('timeChart').getContext('2d');
+new Chart(ctxTime, {
+    type: 'bar',
+    data: {
+        labels: ['代码阅读分析', 'Bug复现确认', '代码修复编写', '单元测试编写', '环境配置与迭代', '技能固化保存', '最终交付汇总'],
+        datasets: [{
+            label: '耗时(秒)',
+            data: [103, 59, 142, 251, 105, 90, 48],
+            backgroundColor: [
+                'rgba(0,210,255,0.7)',
+                'rgba(248,113,113,0.7)',
+                'rgba(251,191,36,0.7)',
+                'rgba(74,222,128,0.7)',
+                'rgba(139,92,246,0.7)',
+                'rgba(139,92,246,0.7)',
+                'rgba(6,182,212,0.7)'
+            ],
+            borderRadius: 8,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+    }
+});
+
+const ctxTool = document.getElementById('toolChart').getContext('2d');
+new Chart(ctxTool, {
+    type: 'doughnut',
+    data: {
+        labels: ['terminal (终端命令)', 'todo (任务规划)', 'write_file (写文件)', 'read_file (读文件)', 'patch (补丁修复)', 'skill_manage (技能管理)'],
+        datasets: [{
+            data: [9, 4, 2, 1, 1, 1],
+            backgroundColor: ['#3a7bd5', '#8b5cf6', '#f857a6', '#4ade80', '#fbbf24', '#06b6d4'],
+            borderWidth: 0,
+            spacing: 3
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#aaa', padding: 12, font: { size: 11 } } } }
+    }
+});
+
+const ctxPie = document.getElementById('tokenPieChart').getContext('2d');
+new Chart(ctxPie, {
+    type: 'pie',
+    data: {
+        labels: ['Prompt Tokens (输入)', 'Completion Tokens (输出)'],
+        datasets: [{
+            data: [388244, 6043],
+            backgroundColor: ['#3a7bd5', '#f857a6'],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#aaa', padding: 15 } } }
+    }
+});
+
+const ctxLatency = document.getElementById('latencyChart').getContext('2d');
+new Chart(ctxLatency, {
+    type: 'bar',
+    data: {
+        labels: ['#1','#2','#3','#4','#5','#6','#7','#8','#9','#10','#11','#12','#13','#14','#15','#16','#17','#18','#19','#20'],
+        datasets: [{
+            label: '延迟(秒)',
+            data: [38.2,36.2,3.2,17.9,56.7,6.7,10.1,66.5,18.4,10.9,18.0,10.1,11.2,7.5,23.4,6.4,19.9,69.9,15.2,21.1],
+            backgroundColor: 'rgba(0,210,255,0.6)',
+            borderRadius: 6,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+    }
+});
+
+const ctxCache = document.getElementById('cacheChart').getContext('2d');
+new Chart(ctxCache, {
+    type: 'line',
+    data: {
+        labels: ['#1','#2','#3','#4','#5','#6','#7','#8','#9','#10','#11','#12','#13','#14','#15','#16','#17','#18','#19','#20'],
+        datasets: [{
+            label: '缓存命中率 (%)',
+            data: [50,92,99,98,97,92,99,97,89,100,100,99,99,99,96,99,97,98,96,98],
+            borderColor: '#4ade80',
+            backgroundColor: 'rgba(74,222,128,0.15)',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4,
+            pointBackgroundColor: '#4ade80'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#aaa' } } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: {
+                min: 40, max: 105,
+                ticks: { color: '#888', callback: v => v + '%' },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+            }
+        }
+    }
+});
+</script>
+</body>
+</html>
