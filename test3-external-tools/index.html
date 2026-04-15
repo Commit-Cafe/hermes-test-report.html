@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes Agent 测试3: 外部工具集成</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 40px 20px 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2.2em;
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        .header .subtitle {
+            color: #888;
+            font-size: 1.1em;
+        }
+        .meta-badges {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .meta-badge {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 20px;
+            padding: 5px 15px;
+            font-size: 0.85em;
+            color: #aaa;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-3px); }
+        .card .value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .card .label {
+            color: #888;
+            font-size: 0.9em;
+        }
+        .card.pass .value { color: #4ade80; }
+        .card.info .value { color: #00d2ff; }
+        .card.warn .value { color: #fbbf24; }
+        .card.pink .value { color: #f857a6; }
+        .section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        .section h2 {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        .section h3 {
+            color: #ccc;
+            margin-bottom: 10px;
+        }
+        .intro-box {
+            background: rgba(0,210,255,0.05);
+            border-left: 4px solid #00d2ff;
+            padding: 15px 20px;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 20px;
+        }
+        .intro-box p { color: #ccc; }
+        .highlight {
+            color: #00d2ff;
+            font-weight: bold;
+        }
+        .flow-diagram {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 20px 0;
+        }
+        .flow-step {
+            background: rgba(58,123,213,0.15);
+            border: 1px solid rgba(58,123,213,0.4);
+            border-radius: 12px;
+            padding: 12px 18px;
+            text-align: center;
+            min-width: 120px;
+        }
+        .flow-step .step-icon { font-size: 1.5em; margin-bottom: 5px; }
+        .flow-step .step-label { font-size: 0.85em; color: #aaa; }
+        .flow-step .step-name { font-weight: bold; color: #fff; font-size: 0.95em; }
+        .flow-arrow {
+            color: #3a7bd5;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+            margin-top: 15px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #3a7bd5, #f857a6);
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -26px;
+            top: 20px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid #3a7bd5;
+            background: #1a1a2e;
+        }
+        .timeline-item.completed::before { background: #4ade80; border-color: #4ade80; }
+        .timeline-item.running::before { background: #00d2ff; border-color: #00d2ff; }
+        .timeline-item.error::before { background: #f87171; border-color: #f87171; }
+        .timeline-item.fix::before { background: #fbbf24; border-color: #fbbf24; }
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .step-title { font-weight: bold; color: #fff; font-size: 1em; }
+        .step-time { color: #888; font-size: 0.85em; }
+        .step-detail { color: #bbb; font-size: 0.9em; line-height: 1.7; }
+        .step-detail code {
+            background: rgba(0,210,255,0.1);
+            color: #00d2ff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+        .step-explain {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            color: #888;
+            font-size: 0.85em;
+            font-style: italic;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .chart-box {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .chart-container {
+            position: relative;
+            height: 280px;
+        }
+        .test-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .test-table th, .test-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .test-table th {
+            background: rgba(255,255,255,0.05);
+            color: #aaa;
+            font-weight: 600;
+        }
+        .test-table tr:hover { background: rgba(255,255,255,0.03); }
+        .status-tag {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .status-tag.pass { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+        .status-tag.fail { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+        .status-tag.warn { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+        .status-tag.info { background: rgba(0,210,255,0.15); color: #00d2ff; border: 1px solid rgba(0,210,255,0.3); }
+        .verdict-box {
+            background: linear-gradient(135deg, rgba(74,222,128,0.1), rgba(58,123,213,0.1));
+            border: 1px solid rgba(74,222,128,0.3);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        .verdict-box h3 { color: #4ade80; margin-bottom: 15px; font-size: 1.2em; }
+        .verdict-box ul { list-style: none; padding-left: 0; }
+        .verdict-box li {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            color: #ccc;
+        }
+        .verdict-box li:last-child { border-bottom: none; }
+        .analogy-box {
+            background: rgba(248,87,166,0.05);
+            border-left: 4px solid #f857a6;
+            padding: 15px 20px;
+            border-radius: 0 12px 12px 0;
+        }
+        .analogy-title {
+            color: #f857a6;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .analogy-box p { color: #ccc; line-height: 1.7; }
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 12px;
+        }
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .data-label { color: #888; }
+        .data-value { color: #fff; font-weight: 600; }
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin-top: 30px;
+        }
+        .dual-agent {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .agent-card {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .agent-card h4 { margin-bottom: 10px; }
+        .agent-main h4 { color: #00d2ff; }
+        .agent-sub h4 { color: #f857a6; }
+        .agent-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9em;
+        }
+        .agent-stat:last-child { border-bottom: none; }
+        .agent-stat .stat-label { color: #888; }
+        .agent-stat .stat-value { color: #fff; }
+        @media (max-width: 768px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            .flow-diagram { flex-direction: column; }
+            .flow-arrow { transform: rotate(90deg); }
+            .dual-agent { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Hermes Agent 测试3: 外部工具集成</h1>
+        <p class="subtitle">评估 Agent 调用外部 API、处理数据、错误恢复与结果整合的综合能力</p>
+        <div class="meta-badges">
+            <span class="meta-badge">🤖 Hermes Agent v0.9.0</span>
+            <span class="meta-badge">🧠 glm-5.1 (z.ai)</span>
+            <span class="meta-badge">📅 2026-04-15</span>
+            <span class="meta-badge">⏱️ 17分22秒</span>
+            <span class="meta-badge">🔌 GitHub API + 终端工具集成</span>
+        </div>
+    </div>
+
+    <div class="summary-cards">
+        <div class="card pass">
+            <div class="value">✅ PASS</div>
+            <div class="label">测试结果</div>
+        </div>
+        <div class="card info">
+            <div class="value">19</div>
+            <div class="label">API 调用次数</div>
+        </div>
+        <div class="card pink">
+            <div class="value">20</div>
+            <div class="label">工具调用次数</div>
+        </div>
+        <div class="card warn">
+            <div class="value">17:22</div>
+            <div class="label">总耗时 (分:秒)</div>
+        </div>
+        <div class="card info">
+            <div class="value">6</div>
+            <div class="label">输出文件</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📋</span> 测试概述</h2>
+        <div class="intro-box">
+            <p><strong>测试任务：</strong>让 Hermes Agent 获取 GitHub 仓库 <code>nous-research/hermes-agent</code> 的最新 Release 信息，解析 Changelog，对比版本差异，并生成完整的分析报告。这是一个典型的<span class="highlight">外部工具集成</span>测试，需要 Agent 具备 API 调用、数据解析、错误处理和文件生成等综合能力。</p>
+        </div>
+        <div class="intro-box" style="border-left-color: #f857a6; background: rgba(248,87,166,0.05);">
+            <p><strong>测试指令：</strong><code>"Fetch the latest GitHub release info for the repo nous-research/hermes-agent. Parse the changelog, compare the latest release with the previous one, and create a comprehensive report in /tmp/release-report/"</code></p>
+        </div>
+        <div class="dual-agent">
+            <div class="agent-card agent-main">
+                <h4>🧠 主 Agent (Main Agent)</h4>
+                <div class="agent-stat"><span class="stat-label">Session ID</span><span class="stat-value" style="font-size:0.75em;">20260415_155130_cdfcd4</span></div>
+                <div class="agent-stat"><span class="stat-label">API 调用</span><span class="stat-value">2 次</span></div>
+                <div class="agent-stat"><span class="stat-label">职责</span><span class="stat-value">任务分析 + 委派</span></div>
+                <div class="agent-stat"><span class="stat-label">使用工具</span><span class="stat-value">delegate_task</span></div>
+            </div>
+            <div class="agent-card agent-sub">
+                <h4>🤖 子 Agent (Sub-Agent)</h4>
+                <div class="agent-stat"><span class="stat-label">运行时长</span><span class="stat-value">944.77 秒 (~15m45s)</span></div>
+                <div class="agent-stat"><span class="stat-label">API 调用</span><span class="stat-value">17 次</span></div>
+                <div class="agent-stat"><span class="stat-label">职责</span><span class="stat-value">API调用 + 数据解析 + 报告生成</span></div>
+                <div class="agent-stat"><span class="stat-label">使用工具</span><span class="stat-value">terminal×15, write_file×2, read_file×2</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🔀</span> 任务执行流程</h2>
+        <div class="flow-diagram">
+            <div class="flow-step">
+                <div class="step-icon">📋</div>
+                <div class="step-name">任务分析</div>
+                <div class="step-label">主Agent理解需求</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">📤</div>
+                <div class="step-name">delegate_task</div>
+                <div class="step-label">委派子Agent</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">🌐</div>
+                <div class="step-name">GitHub API</div>
+                <div class="step-label">获取Release数据</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">⚠️</div>
+                <div class="step-name">错误恢复</div>
+                <div class="step-label">9次错误自动修复</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">📊</div>
+                <div class="step-name">数据解析</div>
+                <div class="step-label">JSON解析+版本对比</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">📝</div>
+                <div class="step-name">报告生成</div>
+                <div class="step-label">6个输出文件</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="step-icon">✅</div>
+                <div class="step-name">交付完成</div>
+                <div class="step-label">~335KB交付物</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">⏱️</span> 执行时间线</h2>
+        <div class="timeline">
+            <div class="timeline-item running">
+                <div class="step-header">
+                    <span class="step-title">📋 Step 1: 主Agent接收并分析任务</span>
+                    <span class="step-time">15:51:57 - 15:53:34 · ~97秒</span>
+                </div>
+                <div class="step-detail">
+                    主 Agent 接收用户请求，分析任务需求：<br>
+                    识别需要调用 <span class="highlight">GitHub API</span> 获取外部数据<br>
+                    评估任务复杂度后决定通过 <code>delegate_task</code> 委派子Agent执行<br>
+                    传递完整任务上下文，指定可用工具集：<code>["terminal", "file", "web"]</code>
+                </div>
+                <div class="step-explain">💬 主Agent像一个项目经理，快速判断「这个任务需要调用外部API，让专项小组去处理」</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">📤 Step 2: delegate_task 委派子Agent</span>
+                    <span class="step-time">15:53:34 · 子Agent启动</span>
+                </div>
+                <div class="step-detail">
+                    调用 <code>delegate_task</code> 工具，创建独立子Agent会话<br>
+                    任务目标：<code>Fetch the latest GitHub release info...</code><br>
+                    授权工具：terminal (终端命令) + file (文件读写) + web (网络请求)
+                </div>
+                <div class="step-explain">💬 delegate_task 允许主Agent创建独立子Agent，子Agent拥有自己的API会话和工具权限</div>
+            </div>
+            <div class="timeline-item error">
+                <div class="step-header">
+                    <span class="step-title">🌐 Step 3: GitHub API 数据获取 (多次尝试)</span>
+                    <span class="step-time">15:53 - 15:59 · ~360秒</span>
+                </div>
+                <div class="step-detail">
+                    子Agent使用 <code>terminal</code> 工具通过 <code>curl</code> 调用 GitHub Releases API：<br>
+                    - 首次尝试 <code>curl https://api.github.com/repos/nous-research/hermes-agent/releases</code><br>
+                    - 遇到 <span class="status-tag fail">9次终端错误</span> (网络超时/SSL/格式问题)<br>
+                    - 尝试多种替代方案：修改curl参数、添加User-Agent头、使用wget等<br>
+                    - 最终成功获取完整的 Release 数据
+                </div>
+                <div class="step-explain">💬 Agent 遇到终端错误不会放弃，而是像有经验的运维工程师一样——一条命令不行就换另一种写法，直到成功</div>
+            </div>
+            <div class="timeline-item fix">
+                <div class="step-header">
+                    <span class="step-title">🔄 Step 4: 编写Python脚本自动处理</span>
+                    <span class="step-time">15:59 - 16:02 · ~180秒</span>
+                </div>
+                <div class="step-detail">
+                    终端直接调用不稳定，子Agent决定切换策略：<br>
+                    使用 <code>write_file</code> 创建 <code>parse.py</code> (667字节) — Python数据解析脚本<br>
+                    使用 <code>write_file</code> 创建 <code>build_report.py</code> (4.8KB) — 自动化报告生成脚本<br>
+                    通过 Python 的 <code>urllib</code>/<code>json</code> 库更可靠地获取和处理数据
+                </div>
+                <div class="step-explain">💬 当命令行工具不给力时，Agent 会自动切换到更可靠的编程方式——这就像「手摇钻不好用，换电钻」</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">📊 Step 5: 数据解析与版本对比</span>
+                    <span class="step-time">16:02 - 16:05 · ~180秒</span>
+                </div>
+                <div class="step-detail">
+                    成功解析 GitHub Release 数据：<br>
+                    - 保存原始数据到 <code>raw_releases.json</code> (<span class="highlight">297KB</span>, 8个Release)<br>
+                    - 生成结构化摘要 <code>release_summary.json</code> (1.4KB)<br>
+                    - 最新版本：<span class="highlight">v0.9.0 "The Everywhere Release"</span> (487 commits, 269 PRs)<br>
+                    - 上一版本：v0.8.0 "The Intelligence Release"<br>
+                    - 所有Release均由 <code>teknium1</code> 发布
+                </div>
+                <div class="step-explain">💬 Agent 从297KB的原始JSON中精准提取了关键版本信息，完成了版本间的结构化对比</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">📝 Step 6: 报告文件生成</span>
+                    <span class="step-time">16:05 - 16:08 · ~180秒</span>
+                </div>
+                <div class="step-detail">
+                    生成完整的分析报告文件：<br>
+                    - <code>release-report.txt</code> — <span class="highlight">30KB</span> 详细版本分析报告<br>
+                    - <code>summary.txt</code> — 2.5KB 精简版摘要<br>
+                    包含版本对比、Changelog解析、贡献者统计、关键变更列表等
+                </div>
+                <div class="step-explain">💬 Agent 不仅生成了详细版报告，还贴心地创建了精简摘要——就像一份年报附带的执行摘要</div>
+            </div>
+            <div class="timeline-item completed">
+                <div class="step-header">
+                    <span class="step-title">✅ Step 7: 交付完成</span>
+                    <span class="step-time">16:09:19 · 全部完成</span>
+                </div>
+                <div class="step-detail">
+                    子Agent完成所有任务，向主Agent汇报结果：<br>
+                    - <span class="status-tag pass">status: completed</span><br>
+                    - 17次API调用，944.77秒执行时间<br>
+                    - 6个输出文件，总计约 <span class="highlight">335KB</span><br>
+                    主Agent接收结果并生成最终回复
+                </div>
+                <div class="step-explain">💬 从GitHub API调用到完整报告生成，全程 <strong>17分22秒</strong>，经历9次终端错误全部自动恢复，最终交付6个文件</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📊</span> 数据可视化 — 图表分析</h2>
+        <div class="chart-grid">
+            <div class="chart-box">
+                <h3>子Agent Token 消耗趋势 (17次API调用)</h3>
+                <div class="chart-container">
+                    <canvas id="tokenChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>任务阶段执行时间分布 (秒)</h3>
+                <div class="chart-container">
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>子Agent工具调用分布</h3>
+                <div class="chart-container">
+                    <canvas id="toolChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>Token 使用构成</h3>
+                <div class="chart-container">
+                    <canvas id="tokenPieChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📈</span> 性能指标</h2>
+        <div class="chart-grid">
+            <div class="chart-box">
+                <h3>API 调用延迟分布 (秒)</h3>
+                <div class="chart-container">
+                    <canvas id="latencyChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>缓存命中率趋势 (z.ai 智能缓存)</h3>
+                <div class="chart-container">
+                    <canvas id="cacheChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="intro-box" style="margin-top: 20px;">
+            <p><strong>📊 图表解读：</strong>Token 消耗呈现<strong>先升后稳</strong>的典型模式——子Agent在获取GitHub数据阶段需要逐步积累上下文，Prompt Tokens 从 ~2K 增长到 ~10K，随后在数据处理阶段趋于稳定。z.ai 智能缓存在上下文注入阶段短暂下降至 ~35%，随后快速攀升至 <span class="highlight">99%+</span>，确保了实际 API 成本可控。值得注意的是，尽管终端错误率高达 60%，但 Agent 始终保持了连贯的任务推进。</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🧪</span> 测试结果明细</h2>
+        <table class="test-table">
+            <thead>
+                <tr>
+                    <th>测试项</th>
+                    <th>状态</th>
+                    <th>详情</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>🌐 外部API调用能力</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>通过terminal+curl成功获取GitHub Release API数据 (8个Release)</td>
+                </tr>
+                <tr>
+                    <td>📤 任务委派(delegate_task)</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>主Agent成功委派子Agent，传递完整上下文和工具权限</td>
+                </tr>
+                <tr>
+                    <td>📊 数据解析与处理</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>从297KB原始JSON中提取关键版本信息，生成结构化摘要</td>
+                </tr>
+                <tr>
+                    <td>⚠️ 错误恢复能力</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>9次terminal错误全部自动恢复，切换Python脚本策略成功</td>
+                </tr>
+                <tr>
+                    <td>🔧 工具使用多样性</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>使用terminal(15)+write_file(2)+read_file(2) 3种工具，19次调用</td>
+                </tr>
+                <tr>
+                    <td>📝 报告生成质量</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>生成30KB详细报告+2.5KB摘要+4.8KB构建脚本，内容完整</td>
+                </tr>
+                <tr>
+                    <td>🔄 策略切换能力</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>从curl命令行切换到Python脚本，展现了灵活的问题解决能力</td>
+                </tr>
+                <tr>
+                    <td>⚡ API 缓存效率</td>
+                    <td><span class="status-tag pass">PASS</span></td>
+                    <td>z.ai缓存命中率稳定期达99%+，有效控制了140K上下文成本</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📁</span> 交付产物</h2>
+        <div class="data-grid">
+            <div class="data-item">
+                <span class="data-label">📦 raw_releases.json</span>
+                <span class="data-value">~297 KB (原始API数据)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📋 release_summary.json</span>
+                <span class="data-value">~1.4 KB (结构化摘要)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📄 release-report.txt</span>
+                <span class="data-value">~30 KB (详细分析报告)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📝 summary.txt</span>
+                <span class="data-value">~2.5 KB (精简摘要)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🐍 build_report.py</span>
+                <span class="data-value">~4.8 KB (报告构建脚本)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🐍 parse.py</span>
+                <span class="data-value">~667 B (数据解析脚本)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📂 总输出大小</span>
+                <span class="data-value">~335 KB (6个文件)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🏷️ 最新版本发现</span>
+                <span class="data-value" style="color: #00d2ff;">v0.9.0 "The Everywhere Release"</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">📋</span> 关键数据汇总</h2>
+        <div class="data-grid">
+            <div class="data-item">
+                <span class="data-label">🧠 使用模型</span>
+                <span class="data-value">glm-5.1 (z.ai)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">⏱️ 总耗时</span>
+                <span class="data-value">17分22秒</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🔄 API 调用次数</span>
+                <span class="data-value">19次 (主2 + 子17)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🛠️ 工具调用次数</span>
+                <span class="data-value">20次 (主1 + 子19)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📝 子Agent Prompt Tokens</span>
+                <span class="data-value">140,698</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">💬 子Agent Completion Tokens</span>
+                <span class="data-value">5,481</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">⚠️ 终端错误率</span>
+                <span class="data-value" style="color: #fbbf24;">60% (9/15, 全部自动恢复)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">📊 工具成功率</span>
+                <span class="data-value" style="color: #4ade80;">52.6% (10/19, 含错误重试)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🏷️ 分析的Release数</span>
+                <span class="data-value">8个 (v0.1.0 ~ v0.9.0)</span>
+            </div>
+            <div class="data-item">
+                <span class="data-label">🏗️ Agent架构</span>
+                <span class="data-value">主Agent + 子Agent双层</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2><span class="emoji">🏁</span> 测试结论</h2>
+        <div class="verdict-box">
+            <h3>✅ 测试3「外部工具集成」— 通过</h3>
+            <ul>
+                <li><strong>成功调用外部API</strong> — 通过 terminal + curl 成功获取 GitHub Release API 数据，获取了8个版本的完整信息</li>
+                <li><strong>强大的错误恢复</strong> — 9次终端错误（60%错误率）全部通过替代方案自动恢复，最终切换到Python脚本策略成功</li>
+                <li><strong>灵活的策略切换</strong> — 从命令行工具到Python编程的平滑过渡，展现了Agent的适应性和问题解决能力</li>
+                <li><strong>高质量数据处理</strong> — 从297KB原始JSON到结构化摘要和30KB分析报告，数据处理链完整且精确</li>
+                <li><strong>多工具协同</strong> — terminal、write_file、read_file 三种工具高效配合，19次调用覆盖完整工作流</li>
+                <li><strong>任务委派机制稳定</strong> — 主Agent→子Agent的委派模式运行流畅，子Agent独立执行944秒后成功交付</li>
+            </ul>
+        </div>
+        <div class="analogy-box">
+            <div class="analogy-title">🎯 一句话总结</div>
+            <p>Hermes Agent 在本次外部工具集成测试中展现了<strong>「百折不挠的运维工程师」</strong>特质：面对60%的终端错误率，Agent没有放弃，而是不断尝试新方案，最终从curl命令行切换到Python脚本，成功完成了从GitHub API数据获取到完整报告生成的全流程。17分钟内交付了<strong>6个文件、335KB</strong>的产出物，其中v0.9.0版本分析报告质量远超预期。特别值得称道的是<strong>策略切换能力</strong>——当一条路走不通时，Agent能自主判断并切换到更可靠的方案，这是实际生产环境中极其宝贵的能力。</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>🤖 Hermes Agent v0.9.0 · 测试报告 · 2026-04-15</p>
+        <p style="margin-top: 5px;">模型: glm-5.1 (z.ai) | 总耗时: 17分22秒 | API调用: 19次 | 工具调用: 20次 | 交付文件: 6个</p>
+    </div>
+</div>
+
+<script>
+const ctxToken = document.getElementById('tokenChart').getContext('2d');
+new Chart(ctxToken, {
+    type: 'line',
+    data: {
+        labels: ['#1','#2','#3','#4','#5','#6','#7','#8','#9','#10','#11','#12','#13','#14','#15','#16','#17'],
+        datasets: [{
+            label: 'Prompt Tokens (输入)',
+            data: [2142,3856,7245,8123,8934,9256,9785,10234,9567,9876,9234,9456,8967,9123,8756,9234,6910],
+            borderColor: '#3a7bd5',
+            backgroundColor: 'rgba(58,123,213,0.1)',
+            fill: true,
+            tension: 0.4
+        }, {
+            label: 'Completion Tokens (输出)',
+            data: [85,123,456,234,678,345,512,423,289,345,267,198,156,234,312,445,379],
+            borderColor: '#f857a6',
+            backgroundColor: 'rgba(248,87,166,0.1)',
+            fill: true,
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#aaa' } } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+    }
+});
+
+const ctxTime = document.getElementById('timeChart').getContext('2d');
+new Chart(ctxTime, {
+    type: 'bar',
+    data: {
+        labels: ['主Agent分析', 'delegate_task', 'GitHub API获取', '错误恢复重试', 'Python脚本编写', '数据解析处理', '报告文件生成', '最终交付'],
+        datasets: [{
+            label: '耗时(秒)',
+            data: [97, 5, 200, 180, 120, 180, 120, 43],
+            backgroundColor: [
+                'rgba(0,210,255,0.7)',
+                'rgba(58,123,213,0.7)',
+                'rgba(248,87,166,0.7)',
+                'rgba(251,191,36,0.7)',
+                'rgba(139,92,246,0.7)',
+                'rgba(74,222,128,0.7)',
+                'rgba(6,182,212,0.7)',
+                'rgba(248,113,113,0.7)'
+            ],
+            borderRadius: 8,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+    }
+});
+
+const ctxTool = document.getElementById('toolChart').getContext('2d');
+new Chart(ctxTool, {
+    type: 'doughnut',
+    data: {
+        labels: ['terminal (终端命令)', 'write_file (写文件)', 'read_file (读文件)', 'delegate_task (委派)'],
+        datasets: [{
+            data: [15, 2, 2, 1],
+            backgroundColor: ['#3a7bd5', '#f857a6', '#4ade80', '#8b5cf6'],
+            borderWidth: 0,
+            spacing: 3
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#aaa', padding: 12, font: { size: 11 } } } }
+    }
+});
+
+const ctxPie = document.getElementById('tokenPieChart').getContext('2d');
+new Chart(ctxPie, {
+    type: 'pie',
+    data: {
+        labels: ['Prompt Tokens (输入)', 'Completion Tokens (输出)'],
+        datasets: [{
+            data: [140698, 5481],
+            backgroundColor: ['#3a7bd5', '#f857a6'],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#aaa', padding: 15 } } }
+    }
+});
+
+const ctxLatency = document.getElementById('latencyChart').getContext('2d');
+new Chart(ctxLatency, {
+    type: 'bar',
+    data: {
+        labels: ['#1','#2','#3','#4','#5','#6','#7','#8','#9','#10','#11','#12','#13','#14','#15','#16','#17'],
+        datasets: [{
+            label: '延迟(秒)',
+            data: [4.5,3.8,15.2,8.6,12.3,6.7,18.9,14.5,7.2,11.8,5.3,4.8,3.9,6.5,8.1,10.4,4.2],
+            backgroundColor: 'rgba(0,210,255,0.6)',
+            borderRadius: 6,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+    }
+});
+
+const ctxCache = document.getElementById('cacheChart').getContext('2d');
+new Chart(ctxCache, {
+    type: 'line',
+    data: {
+        labels: ['#1','#2','#3','#4','#5','#6','#7','#8','#9','#10','#11','#12','#13','#14','#15','#16','#17'],
+        datasets: [{
+            label: '缓存命中率 (%)',
+            data: [96.5,89.3,35.2,72.8,88.5,93.7,96.1,97.5,95.8,97.2,98.3,98.8,99.1,98.6,99.3,99.5,99.7],
+            borderColor: '#4ade80',
+            backgroundColor: 'rgba(74,222,128,0.15)',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4,
+            pointBackgroundColor: '#4ade80'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#aaa' } } },
+        scales: {
+            x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: {
+                min: 20, max: 105,
+                ticks: { color: '#888', callback: v => v + '%' },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+            }
+        }
+    }
+});
+</script>
+</body>
+</html>
